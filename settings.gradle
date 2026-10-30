@@ -1,0 +1,10 @@
+pluginManagement {
+    repositories { google(); mavenCentral(); gradlePluginPortal() }
+}
+rootProject.name = 'CloneSpace'
+include ':app'
+
+// Engine checkout (cloned by CI into ./engine). Override with -PengineDir=path/to/Bcore
+def enginePath = settings.hasProperty('engineDir') ? settings.property('engineDir') : 'engine/Bcore'
+include ':Bcore'
+project(':Bcore').projectDir = file(enginePath)
