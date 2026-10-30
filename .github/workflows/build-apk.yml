@@ -1,0 +1,83 @@
+name: Build debug APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      jdk_version:
+        description: JDK version
+        type: string
+        default: '17'
+      engine_repo:
+        description: Engine repo (owner/name)
+        type: string
+        default: 'FBlackBox/BlackBox'
+      engine_ref:
+        description: Engine branch or tag (blank = default branch)
+        type: string
+        default: ''
+      engine_module:
+        description: Library module folder inside the engine repo
+        type: string
+        default: 'Bcore'
+      abi:
+        description: Which edition(s) to build
+        type: choice
+        options: [both, arm64-v8a, armeabi-v7a]
+        default: both
+      ndk_version:
+        description: NDK version
+        type: string
+        default: '25.2.9519653'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: ${{ fromJSON(inputs.abi == 'both' && '["arm64-v8a","armeabi-v7a"]' || format('["{0}"]', inputs.abi)) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.jdk_version }}
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-33 build-tools;33.0.2 cmake;3.22.1 ndk;${{ inputs.ndk_version }}
+
+      - name: Fetch engine
+        env:
+          REPO: ${{ inputs.engine_repo }}
+          REF: ${{ inputs.engine_ref }}
+          MODULE: ${{ inputs.engine_module }}
+        run: |
+          ARGS=""
+          if [ -n "$REF" ]; then ARGS="--branch $REF"; fi
+          git clone --depth 1 --recurse-submodules $ARGS "https://github.com/$REPO" engine
+          if [ ! -d "engine/$MODULE" ]; then
+            echo "::error::Module '$MODULE' not found in $REPO. Top-level folders:"; ls engine; exit 1
+          fi
+          echo "Engine commit: $(git -C engine rev-parse HEAD)"
+          ls engine/LICENSE* 2>/dev/null || echo "::warning::No LICENSE file found in engine repo - check its license."
+
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '7.6.4'
+
+      - name: Build debug APK
+        env:
+          MODULE: ${{ inputs.engine_module }}
+        run: gradle :app:assembleDebug -PtargetAbi=${{ matrix.abi }} -PengineDir=engine/$MODULE --stacktrace
+
+      - name: Rename APK
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/debug/*.apk "out/CloneSpace-${{ matrix.abi }}-debug.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CloneSpace-${{ matrix.abi }}-debug
+          path: out/*.apk
