@@ -1,0 +1,47 @@
+name: Build cloner APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      engine_repo:
+        description: "BlackBox fork to build (owner/name)"
+        default: "jlacdroid/BlackBox"
+      engine_ref:
+        description: "Branch, tag or commit"
+        default: "master"
+      java_version:
+        description: "JDK version (try 11 first, then 17 or 8 if the build fails)"
+        default: "11"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the engine fork (Bcore + demo cloner app)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.engine_repo }}
+          ref: ${{ inputs.engine_ref }}
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java_version }}
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Show build tasks (helps with 32-bit vs 64-bit variants)
+        run: |
+          chmod +x gradlew
+          ./gradlew tasks --all --no-daemon | grep -i "assemble" || true
+
+      - name: Build debug APKs
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloner-apks
+          path: "**/build/outputs/apk/**/*.apk"
+          if-no-files-found: error
